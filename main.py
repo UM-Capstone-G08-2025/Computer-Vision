@@ -1,6 +1,5 @@
 import os
 import cv2
-import time
 from object_detection import load_yolo_model, detect_objects
 from uart_comms import configure_uart, send_message, close_uart
 
