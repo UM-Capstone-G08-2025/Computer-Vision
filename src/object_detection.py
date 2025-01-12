@@ -21,7 +21,7 @@ def load_yolo_model():
         classes = [line.strip() for line in f.readlines()]
 
     layer_names = net.getLayerNames()
-    output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+    output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
 
     return net, classes, output_layers
 
