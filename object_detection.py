@@ -3,9 +3,9 @@ import numpy as np
 import os
 
 def load_yolo_model():
-    weights_path = os.path.expanduser("~/darknet/yolov3-tiny.weights")
-    config_path = os.path.expanduser("~/darknet/cfg/yolov3-tiny.cfg")
-    names_path = os.path.expanduser("~/darknet/data/coco.names")
+    weights_path = os.path.expanduser("./assets/data/yolov3-tiny.weights")
+    config_path = os.path.expanduser("./assets/cfg/yolov3-tiny.cfg")
+    names_path = os.path.expanduser("./assets/darknet/data/coco.names")
 
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"{config_path} not found")
