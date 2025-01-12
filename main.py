@@ -6,13 +6,13 @@ from uart_comms import configure_uart, send_message, close_uart
 def ensure_dialout_permissions():
     # Add the user to the dialout group if not already a member
     os.system("sudo usermod -aG dialout $USER")
-    
+
     # Change the permissions of the UART port to ensure read and write access
     os.system("sudo chmod 666 /dev/ttyS0")
 
 def main():
     ensure_dialout_permissions()
-    
+
     net, classes, output_layers = load_yolo_model()
     data = configure_uart()
     if data is None:
