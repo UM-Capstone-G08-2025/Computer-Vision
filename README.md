@@ -13,5 +13,5 @@ conda env create -f environment.yml
 Run the software:
 
 ```sh
-python ./src/main.py
+python3.6 ./src/main.py
 ```
