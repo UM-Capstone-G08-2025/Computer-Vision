@@ -2,6 +2,10 @@ import os
 import cv2
 from object_detection import load_yolo_model, detect_objects
 from uart_comms import configure_uart, send_message, close_uart
+from ws import WebSocketClient
+import threading
+import queue
+import time
 
 def ensure_dialout_permissions():
     # Add the user to the dialout group if not already a member
@@ -18,6 +22,16 @@ def main():
     if data is None:
         print("Failed to open UART port. Exiting...")
         return
+
+    ws = WebSocketClient("channel1")
+
+    t1 = threading.Thread(target=ws.listen_for_events)
+    t1.daemon = True
+    t1.start()
+
+    t2 = threading.Thread(target=ws.send_frames)
+    t2.daemon = True
+    t2.start()
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -46,6 +60,8 @@ def main():
 
                     message = f"{label}: {x},{y},{w},{h}\n"
                     send_message(data, message)
+
+            ws.send_frame(frame)
 
             cv2.imshow("Object Detection", frame)
 
