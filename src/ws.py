@@ -11,7 +11,7 @@ class WebSocketClient:
         self.sio = socketio.Client()
         self.channel = channel
         self.frame = None
-        self.url = "http://0.0.0.0:3003"
+        self.url = os.environ["WS_URL"]
         self.initialize()
 
     def initialize(self):
