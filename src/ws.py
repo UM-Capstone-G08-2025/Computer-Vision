@@ -4,6 +4,7 @@ import cv2
 from PIL import Image
 from io import BytesIO
 import time
+import os
 
 class WebSocketClient:
     def __init__(self, channel):
@@ -17,6 +18,11 @@ class WebSocketClient:
         self.sio.connect(self.url)
         self.sio.emit("subscribe", {
             "channel": self.channel,
+            "auth": {
+                "headers": {
+                    "Authorization": "Bearer " + os.environ["WS_API_KEY"],
+                }
+            }
         });
 
     def listen_for_events(self):

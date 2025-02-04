@@ -6,6 +6,7 @@ from ws import WebSocketClient
 import threading
 import queue
 import time
+from dotenv import load_dotenv
 
 def ensure_dialout_permissions():
     # Add the user to the dialout group if not already a member
@@ -15,6 +16,7 @@ def ensure_dialout_permissions():
     os.system("sudo chmod 666 /dev/ttyS0")
 
 def main():
+    load_dotenv()
     ensure_dialout_permissions()
 
     net, classes, output_layers = load_yolo_model()
