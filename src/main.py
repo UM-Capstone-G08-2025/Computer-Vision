@@ -1,95 +1,127 @@
-import cv2
-import numpy as np
 import os
-from datetime import datetime
+import cv2
+import time
+import numpy as np
+from object_detection import load_yolo_model, detect_objects
+from uart_comms import configure_uart, send_message, close_uart
 
-# def load_yolo_model():
-#     weights_path = os.path.expanduser("~/Desktop/src/yolo-mask-detection/models/mask-yolov3-tiny-prn.weights")
-#     config_path = os.path.expanduser("~/Desktop/src/yolo-mask-detection/models/mask-yolov3-tiny-prn.cfg")
-#     names_path = os.path.expanduser("~/Desktop/src/yolo-mask-detection/models/mask.names")
-
-def load_yolo_model(model_type='coco'):
-    if model_type == 'coco':
-        weights_path = os.path.expanduser("~/darknet/yolov3-tiny.weights")
-        config_path = os.path.expanduser("~/darknet/cfg/yolov3-tiny.cfg")
-        names_path = os.path.expanduser("~/darknet/data/coco.names")
-    elif model_type == 'mask':
-        weights_path = os.path.expanduser("~/Desktop/src/yolo-mask-detection/models/mask-yolov3-tiny-prn.weights")
-        config_path = os.path.expanduser("~/Desktop/src/yolo-mask-detection/models/mask-yolov3-tiny-prn.cfg")
-        names_path = os.path.expanduser("~/Desktop/src/yolo-mask-detection/models/mask.names")
-    else:
-        raise ValueError("Invalid model type. Choose 'coco' or 'mask'.")
-
+def ensure_dialout_permissions():
+    # Add the user to the dialout group if not already a member
+    os.system("sudo usermod -aG dialout $USER")
     
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"{config_path} not found")
-    if not os.path.exists(weights_path):
-        raise FileNotFoundError(f"{weights_path} not found")
-    if not os.path.exists(names_path):
-        raise FileNotFoundError(f"{names_path} not found")
+    # Change the permissions of the UART port to ensure read and write access
+    os.system("sudo chmod 666 /dev/ttyS0")
 
-    #print(cv2.cuda.getCudaEnabledDeviceCount())
-    net = cv2.dnn.readNet(weights_path, config_path)
-    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
-    #print(cv2.getBuildInformation())
+def main():
+    ensure_dialout_permissions()
+    counter = 0
 
+    # Load both COCO and mask detection models
+    coco_net, coco_classes, coco_output_layers = load_yolo_model('coco')
+    mask_net, mask_classes, mask_output_layers = load_yolo_model('mask')
+
+    #net, classes, output_layers = load_yolo_model()
+    data = configure_uart()
+    if data is None:
+        print("Failed to open UART port. Exiting...")
+        return
+
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        raise Exception("Could not open video device")
+
+    cv2.namedWindow("Object Detection", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Object Detection", 900, 640)
+
+    # try:
+    #     while True:
+    #         ret, frame = cap.read()
+    #         if not ret:
+    #             print("Failed to grab frame")
+    #             break
+
+    #         if counter % 1 == 0:
+    #             boxes, class_ids, confidences, indexes = detect_objects(net, output_layers, frame)
+
+    #         for i in range(len(boxes)):
+    #             if i in indexes:
+    #                 x, y, w, h = boxes[i]
+    #                 label = str(classes[class_ids[i]])
+    #                 confidence = confidences[i]
+    #                 color = (0, 255, 0)
+    #                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+    #                 cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    #                 message = f"{label}: {x},{y},{w},{h}\n"
+    #                 send_message(data, message)
+
+    #         cv2.imshow("Object Detection", frame)
+
+    #         if cv2.waitKey(1) & 0xFF == ord('q'):
+    #             break
     try:
-        count = cv2.cuda.getCudaEnabledDeviceCount()
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    print("Failed to grab frame")
+                    break
 
-        if count > 0:
-            print("Using cuda")
-        else:
-            print("not using cuda")
+                if counter % 1 == 0:
+                    coco_boxes, coco_class_ids, coco_confidences, coco_indices = detect_objects(coco_net, coco_output_layers, frame)
+                    mask_boxes, mask_class_ids, mask_confidences, mask_indices = detect_objects(mask_net, mask_output_layers, frame)
 
-    except:
-        print("Not using cuda")
+                intruder_detected = False
+                person_boxes = []
 
-    classes = []
-    with open(names_path, "r") as f:
-        classes = [line.strip() for line in f.readlines()]
+                for i in range(len(mask_boxes)):
+                    if i in mask_indices:
+                        x, y, w, h = mask_boxes[i]
+                        label = str(mask_classes[mask_class_ids[i]])
+                        confidence = mask_confidences[i]
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                        cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                        if label == "intruder":
+                            intruder_detected = True
+                            person_boxes.append(mask_boxes[i])
 
-    layer_names = net.getLayerNames()
-    output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+                if intruder_detected and person_boxes:
+                    avg_x = int(np.mean([box[0] for box in person_boxes]))
+                    avg_y = int(np.mean([box[1] for box in person_boxes]))
+                    avg_w = int(np.mean([box[2] for box in person_boxes]))
+                    avg_h = int(np.mean([box[3] for box in person_boxes]))
+                    message = f"Intruder detected: intruder at ({avg_x}, {avg_y}, {avg_w}, {avg_h})"
+                    send_message(data, message)
 
-    return net, classes, output_layers
+                    for i in range(len(coco_boxes)):
+                        if i in coco_indices and coco_classes[coco_class_ids[i]] == "person":
+                            x, y, w, h = coco_boxes[i]
+                            avg_x = int(np.mean([box[0] for box in coco_boxes if coco_classes[coco_class_ids[i]] == "person"]))
+                            avg_y = int(np.mean([box[1] for box in coco_boxes if coco_classes[coco_class_ids[i]] == "person"]))
+                            avg_w = int(np.mean([box[2] for box in coco_boxes if coco_classes[coco_class_ids[i]] == "person"]))
+                            avg_h = int(np.mean([box[3] for box in coco_boxes if coco_classes[coco_class_ids[i]] == "person"]))
+                            send_message(data, f"Person detected: person at ({avg_x}, {avg_y}, {avg_w}, {avg_h})")
+                            break
 
-def detect_objects(net, output_layers, frame):
-    # print(f"0: {datetime.now()}")
-    height, width, _ = frame.shape
-    # print(f"1: {datetime.now()}")
-    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
-    # print(f"2: {datetime.now()}")
-    net.setInput(blob)
-    # print(f"3: {datetime.now()}")
-    # Set OpenCL as the target for inference
-    # net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-    #inet.setPreferableTarget(cv2.dnn.DNN_TARGET_OPENCL)
+                if not intruder_detected:
+                    for i in range(len(coco_boxes)):
+                        if i in coco_indices:
+                            x, y, w, h = coco_boxes[i]
+                            label = str(coco_classes[coco_class_ids[i]])
+                            confidence = coco_confidences[i]
+                            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                            cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            message = f"{label}: {x},{y},{w},{h}\n"
+                            send_message(data, message)
 
-    outs = net.forward(output_layers)
-    # print(f"4: {datetime.now()}")
-    class_ids = []
-    confidences = []
-    boxes = []
+                cv2.imshow("Object Detection", frame)
 
-    for out in outs:
-        for detection in out:
-            scores = detection[5:]
-            class_id = np.argmax(scores)
-            confidence = scores[class_id]
-            if confidence > 0.2:
-                center_x = int(detection[0] * width)
-                center_y = int(detection[1] * height)
-                w = int(detection[2] * width)
-                h = int(detection[3] * height)
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-                boxes.append([x, y, w, h])
-                confidences.append(float(confidence))
-                class_ids.append(class_id)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
-    # print(f"5: {datetime.now()}")
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
-    # print(f"6: {datetime.now()}")
+    finally:
+            cap.release()
+            cv2.destroyAllWindows()
+            close_uart(data)
 
-    return boxes, class_ids, confidences, indexes
+if __name__ == "__main__":
+    main()
